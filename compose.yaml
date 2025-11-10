@@ -1,0 +1,21 @@
+# Needs to mount a data path and setup something that mpi host can properly network to
+services:
+    app:
+        image: cuda_mpi
+        command: /bin/bash
+        hostname: casper_docker
+        stdin_open: true # docker run -i
+        tty: true        # docker run -t
+        network_mode: host
+        volumes:
+            - /cloud/programs/loki_cluster:/mpi
+        deploy:
+          resources:
+            reservations:
+              devices:
+                - driver: nvidia
+                  count: all
+                  capabilities: [gpu]
+networks:
+  mpi_net:
+    driver: bridge
