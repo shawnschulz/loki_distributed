@@ -7,30 +7,41 @@
 
 // initialize the convolution kernel in constant memory
 #define MASK_WIDTH 5
-__constant__ __half M[MASK_WIDTH];
-cudaMemcpyToSymbol(M,h_M,MASK_WIDTH*sizeof(float));
+#define TITLE_SIZE 4
+#define INPUT_SIZE 12
+
+
+
+__constant__ float M[MASK_WIDTH];
 
 __global__ void _multiply(const float *a, float *b) {
     const int i = threadIdx.x + blockIdx.x * blockDim.x;
     b[i] *= a[i];
 }
 
-__global__ void _relu_f16_kernel(__half *x, __half *y, int N) {
+// activation
+__global__ void _relu_f16_kernel(float *x, float *y, int N) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i < N) {
+    if (x[i] < N) {
         y[i] = fmaxf(0.0f, x[i]);
     }
 }
 
-__global__ void _convolution_layer(__half *input_data, __half *output_data, int width) {
+// convolution forward
+__global__ void _convolution_layer_smp_fp16(float *input_data, float *output_data, int width) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
+    __shared__ float input_data_shared[TITLE_SIZE];
+    input_data_shared[threadIdx.x] = input_data[i];
 }
 
-__global__ void _kl_divergence(__half *input_data, __half *output_data) {
+// loss
+__global__ void _kl_divergence(float *a, float *b, float *kl_matrix) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    kl_matrix[i] = a[i] * log(a[i] / b[i]);
 }
 
 // Make a stochastic gradient descent kernel
-__global__ void _sgd(__half a[BLOCK_SIZE][BLOCK_SIZE], __half b[BLOCK_SIZE][BLOCK_SIZE]) {
+__global__ void _sgd(float a[BLOCK_SIZE][BLOCK_SIZE], float b[BLOCK_SIZE][BLOCK_SIZE]) {
 }
 
 extern "C" void launch_VAE_inference(const float*a, float*b) {
