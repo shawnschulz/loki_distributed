@@ -15,7 +15,8 @@ MPI_RUN_ARGS= --mca pml ob1 --mca btl self,sm
 MPI_N_PROCS=-np 2
 MPI_HOSTS=--host bankerz-tower:1,casper:1
 FINAL_EXECUTABLE_NAME=loki
-
+MPI_DOCKER_COMMAND=mpicc -c main.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -I/opt/openmpi/include/ -L /opt/openmpi/lib/ -lcudart
+NVCC_DOCKER_COMMAND=mpicc -c main.c -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart
 build:
 	mpicc -c main.c
 	nvcc -c lib.cu -Xcompiler -fPIC
@@ -23,3 +24,8 @@ build:
 
 run: build
 	mpirun $(MPI_RUN_ARGS) $(MPI_N_PROCS) $(MPI_HOSTS) loki
+
+docker_compile:
+	$(MPI_DOCKER_COMMAND)
+	nvcc -c lib.cu -Xcompiler -fPIC
+	mpicc -o $(FINAL_EXECUTABLE_NAME) lib.o main.o -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart -I/opt/openmpi/include/ -L /opt/openmpi/lib/ -lstdc++

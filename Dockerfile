@@ -1,13 +1,8 @@
-FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:13.0.1-cudnn-devel-ubi9
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libevent-dev \
-    openssh-client \
-    openssh-server \
-    wget \
-    perl \
- && rm -rf /var/lib/apt/lists/*
+
+RUN dnf install -y gcc gcc-c++ make libevent-devel \
+                   openssh-clients openssh-server wget perl
 
 # Install OpenMPI 5.0.8
 RUN wget https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.8.tar.gz && \
@@ -19,15 +14,15 @@ RUN wget https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-5.0.8.tar.g
     echo "/opt/openmpi/lib" > /etc/ld.so.conf.d/openmpi.conf && \
     ldconfig
 
-ENV PATH=/opt/openmpi/bin:$PATH
-ENV LD_LIBRARY_PATH=/opt/openmpi/lib:$LD_LIBRARY_PATH
-ENV LD_LIBRARY_PATH=/opt/openmpi/lib:$LD_LIBRARY_PATH
-
 RUN mkdir /var/run/sshd
 RUN ssh-keygen -A
 
-RUN useradd -ms /bin/bash mpi
+# Should use secrets for this prob, but we will be using passwordless ssh anyways
+RUN useradd -m -s /bin/bash mpi && echo "mpi:testpwd" | chpasswd
 USER mpi
+ENV PATH=/opt/openmpi/bin:$PATH
+ENV LD_LIBRARY_PATH=/opt/openmpi/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/opt/openmpi/lib:$LD_LIBRARY_PATH
 WORKDIR /home/mpi
 
 RUN ssh-keygen -t rsa -N "" -f /home/mpi/.ssh/id_rsa && \
@@ -36,6 +31,8 @@ RUN ssh-keygen -t rsa -N "" -f /home/mpi/.ssh/id_rsa && \
 
 USER root
 RUN echo "StrictHostKeyChecking no" >> /etc/ssh/ssh_config
+
+USER mpi
 
 EXPOSE 22
 CMD ["/usr/sbin/sshd", "-D"]

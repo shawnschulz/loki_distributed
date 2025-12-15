@@ -6,7 +6,6 @@ services:
         hostname: casper_docker
         stdin_open: true # docker run -i
         tty: true        # docker run -t
-        network_mode: host
         volumes:
             - /cloud/programs/loki_cluster:/mpi
         deploy:
@@ -17,5 +16,5 @@ services:
                   count: all
                   capabilities: [gpu]
 networks:
-  mpi_net:
-    driver: bridge
+    mpi_net:
+        driver: bridge
