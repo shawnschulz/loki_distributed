@@ -30,5 +30,8 @@ docker_compile:
 	nvcc -c lib.cu -Xcompiler -fPIC
 	mpicc -o $(FINAL_EXECUTABLE_NAME) lib.o main.o -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart -I/opt/openmpi/include/ -L /opt/openmpi/lib/ -lstdc++
 
+compile_test_handler:
+	g++ -g -o test_data_handling test_data_handling.cpp -lparquet -larrow
+
 build_data_handler:
 	g++ -fPIC -shared data_handler.cpp -larrow -lparquet -o libdata_handler.so
