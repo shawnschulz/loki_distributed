@@ -132,7 +132,6 @@ extern "C" {
                     else {
                         auto[ it, _ ] = frequencies.try_emplace(string_window, 0);
                         ++it->second;
-                        n_vocab_found++;
                     }
                 }
             }
@@ -147,8 +146,8 @@ extern "C" {
             }
         }
 
-        while (!vocab_queue.empty() and forward_vocab.size() < vocab_size) {
-            forward_vocab.insert(vocab_queue.top().second());
+        while ((!vocab_queue.empty()) || (forward_vocab.size() < vocab_size)) {
+            forward_vocab.insert(vocab_queue.top().second);
             vocab_queue.pop();
         }
 
