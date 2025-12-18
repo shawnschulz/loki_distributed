@@ -83,16 +83,16 @@ extern "C" {
         return;
     }
 
-    void serialize_forward(const std::string& filename, std::set<std::string> forward_vocab) {
+    void serialize_forward(const std::string& filename, std::unordered_map<int, std::string> forward_vocab) {
         std::ofstream file(filename, std::ios::binary);
         if (!file.is_open()) {
-           std::cerr
+            std::cerr
                 << "[ERROR] Failed to open file for writing."
                 << std::endl;
             return;
         }
-        for (auto const& it: forward_vocab) {
-            file << it;
+        for (auto const& p: forward_vocab) {
+            file << p.first << p.second;
         }
         return;
     }
@@ -112,8 +112,12 @@ extern "C" {
     void train_tokenizer(char* byte_characters, int input_size, int vocab_size) {
         // Construct the vocabulary
         // these will be serilaizable and deseriable for easy encoding and decoding
-        std::set<std::string> forward_vocab = {"<eos>", "<bos>", "<eoc>", "<boc>"};
-        std::unordered_map<std::string, int > reverse_vocab;
+        std::unordered_map<int, std::string> forward_vocab;
+        forward_vocab.insert({0, "<eos>"});
+        forward_vocab.insert({1, "<bos>"});
+        forward_vocab.insert({2, "<eoc>"});
+        forward_vocab.insert({3, "<boc>"});
+        std::unordered_map<std::string, int> reverse_vocab;
         std::unordered_map<std::string, int> frequencies;
 
         // find most frequent string of increasing sizes until vocabulary size reached
@@ -126,6 +130,7 @@ extern "C" {
                     if (frequencies.find(string_window) == frequencies.end()) {
                         frequencies.insert({string_window, 1});
                         if (n = 1) {
+                            forward_vocab.insert({forward_vocab.size() + 1, string_window});
                             n_vocab_found++;
                         }
                     }
@@ -146,15 +151,16 @@ extern "C" {
             }
         }
 
-        while ((!vocab_queue.empty()) || (forward_vocab.size() < vocab_size)) {
-            forward_vocab.insert(vocab_queue.top().second);
+
+        while ((!vocab_queue.empty()) && (forward_vocab.size() < vocab_size)) {
+            forward_vocab.insert({forward_vocab.size() + 1, vocab_queue.top().second});
             vocab_queue.pop();
         }
 
         // Construct the reverse_vocab from the forward_vocab
         int counter = 0;
         for (auto& it: forward_vocab) {
-            reverse_vocab.insert({it, counter});
+            reverse_vocab.insert({it.second, counter});
             counter++;
         }
         // Serialize the forward and reverse vocab
