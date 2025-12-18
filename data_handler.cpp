@@ -68,6 +68,35 @@ extern "C" {
 //        *out_rows = static_cast<int>(cstrings->size());
 //        return cstrings->data();  // pointer to array of C strings
 //    }
+    std::string* load_fineweb_vocab_training_data(std::string path) {
+        // This is just to test our vocab training and tokenization, eventually we can
+        // refactor our vocab training to be finetunable
+        std::string* ret = new std::string("");
+        for (int i = 1; i < 2; i++) {
+            std::string filename = path + "/ultrafineweb-en-part-000" + std::to_string(i) + "-of-2048.parquet";
+            std::cout << "[INFO] Loading vocab data, currently loading: " << filename << std::endl;
+
+            auto infile_res = arrow::io::ReadableFile::Open(filename);
+            auto infile = *infile_res;
+
+            auto reader_res = parquet::arrow::OpenFile(infile, arrow::default_memory_pool());
+            std::unique_ptr<parquet::arrow::FileReader> reader = std::move(*reader_res);
+
+            std::shared_ptr<arrow::Table> table;
+            reader->ReadTable(&table);
+
+            auto col = table->GetColumnByName("content");
+
+
+            for (int i = 0; i < col->num_chunks(); ++i) {
+                auto chunk = std::static_pointer_cast<arrow::StringArray>(col->chunk(i));
+                for (int j = 0; j < chunk->length(); ++j) {
+                    *ret += chunk->GetString(j);
+                }
+            }
+        }
+        return ret;
+    };
 
     void serialize_reverse(const std::string& filename, std::unordered_map<std::string, int> reverse_vocab) {
         std::ofstream file(filename, std::ios::binary);
@@ -148,7 +177,7 @@ extern "C" {
     // Use byte pair encoding. for now we'll just single thread this, since it's unlikely to be the bottlenck
     // and it's actually quite tricky to parallelize the BPE algorithm
     // but in the future we'll want a kernel for this too
-    void train_tokenizer(std::string training_string, int vocab_size) {
+    void train_tokenizer(std::string path_name, std::string &training_string, int vocab_size) {
         // Construct the vocabulary
         // these will be serilaizable and deseriable for easy encoding and decoding
         std::unordered_map<int, std::string> forward_vocab;
@@ -162,13 +191,16 @@ extern "C" {
         // find most frequent string of increasing sizes until vocabulary size reached
         int n = 1;
         int n_vocab_found = 0;
+        std::priority_queue<std::pair<int, std::string>> vocab_queue;
+        std::string string_window;
         while ( n_vocab_found < vocab_size ) {
+            std::cout << "[INFO] Constructing vocabulary, n_vocab_found: " << n_vocab_found << "\n";
             for (int i = 0; i < training_string.size(); i++) {
                 if ( n + i < training_string.size() - 1 ) {
-                    std::string string_window = training_string.substr(i, n + i);
+                    string_window = training_string.substr(i, n + i);
                     if (frequencies.find(string_window) == frequencies.end()) {
                         frequencies.insert({string_window, 1});
-                        if (n = 1) {
+                        if (n == 1) {
                             forward_vocab.insert({forward_vocab.size() + 1, string_window});
                             reverse_vocab.insert({string_window, forward_vocab.size()});
                             n_vocab_found++;
@@ -181,7 +213,6 @@ extern "C" {
                 }
             }
             // use a heap to add vocab of frequency > 1 so we can sort
-            std::priority_queue<std::pair<int, std::string>> vocab_queue;
             for (auto& it: frequencies) {
                 if ((it.first.size() == 1) || (frequencies[it.first] > 1)) {
                     if (reverse_vocab.find(it.first) != reverse_vocab.end()) {
@@ -206,8 +237,8 @@ extern "C" {
             counter++;
         }
         // Serialize the forward and reverse vocab
-        serialize_forward(".model_data/forward_vocab.bin", forward_vocab);
-        serialize_reverse(".model_data/reverse_vocab.bin", reverse_vocab);
+        serialize_forward(path_name + "/forward_vocab.bin", forward_vocab);
+        serialize_reverse(path_name + "/reverse_vocab.bin", reverse_vocab);
     }
 
     // uses the lookup table created in train_tokenizer to tokenize input text
