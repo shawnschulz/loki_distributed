@@ -68,10 +68,10 @@ extern "C" {
 //        *out_rows = static_cast<int>(cstrings->size());
 //        return cstrings->data();  // pointer to array of C strings
 //    }
-    std::string* load_fineweb_vocab_training_data(std::string path) {
+    std::vector<std::string> load_fineweb_vocab_training_data(std::string path) {
         // This is just to test our vocab training and tokenization, eventually we can
         // refactor our vocab training to be finetunable
-        std::string* ret = new std::string("");
+        std::vector<std::string> ret;
         for (int i = 1; i < 2; i++) {
             std::string filename = path + "/ultrafineweb-en-part-000" + std::to_string(i) + "-of-2048.parquet";
             std::cout << "[INFO] Loading vocab data, currently loading: " << filename << std::endl;
@@ -91,12 +91,25 @@ extern "C" {
             for (int i = 0; i < col->num_chunks(); ++i) {
                 auto chunk = std::static_pointer_cast<arrow::StringArray>(col->chunk(i));
                 for (int j = 0; j < chunk->length(); ++j) {
-                    *ret += chunk->GetString(j);
+                    ret.push_back(chunk->GetString(j));
                 }
             }
         }
         return ret;
     };
+    std::vector<std::string> flatten_training_data(std::vector<std::string>& input) {
+        std::vector<std::string> flat_training_data;
+        std::string new_string;
+        for(int i = 0; i < 50000; i++) {
+            std::cout << "[INFO] Flattening vocabulary: " << i << "\n";
+            new_string = input.back();
+            input.pop_back();
+            for (auto s: new_string) {
+                flat_training_data.push_back(std::to_string(s));
+            }
+        }
+        return flat_training_data;
+    }
 
     void serialize_reverse(const std::string& filename, std::unordered_map<std::string, int> reverse_vocab) {
         std::ofstream file(filename, std::ios::binary);
@@ -171,26 +184,15 @@ extern "C" {
         }
         return reverse_vocab;
     }
-    template <class Key, class Value>
-    std::pair<Key, Value> find_max_freq(
-        std::unordered_map<Key, Value> const &x)
+    std::pair<std::string, std::pair<int, int>> find_max_freq(
+        std::unordered_map<std::string, std::pair<int, int>> const &x)
     {
         return *std::max_element(x.begin(), x.end(),
-                                [](const std::pair<Key, Value> &p1,
-                                    const std::pair<Key, Value> &p2)
+                                [](const std::pair<std::string, std::pair<int, int>> &p1,
+                                    const std::pair<std::string, std::pair<int, int>> &p2)
                                 {
                                     return p1.second.first < p2.second.first;
                                 });
-    }
-
-    // Deletes the nth frequencies from frequencies so we can more easily find the max
-    // and save memory
-    void delete_nth_frequencies(std::unordered_map<std::string, int> &frequencies, int n) {
-        for (auto& it: frequencies) {
-            if (it.first.size() == n) {
-                frequencies.erase(it);
-            }
-        }
     }
 
     // read column from the parquet file and tokenize it using some tokenization scheme so we can actually
@@ -198,15 +200,15 @@ extern "C" {
     // Use byte pair encoding. for now we'll just single thread this, since it's unlikely to be the bottlenck
     // and it's actually quite tricky to parallelize the BPE algorithm
     // but in the future we'll want a kernel for this too
-    void train_tokenizer(std::string path_name, std::vector<std::string> training_data, int vocab_size) {
+    void train_tokenizer(std::string path_name, std::vector<std::string>& training_data, int vocab_size) {
         // Construct the vocabulary
         // these will be serilaizable and deseriable for easy encoding and decoding
         std::unordered_map<int, std::string> forward_vocab;
-        forward_vocab.insert({0, "<eos>"});
-        forward_vocab.insert({1, "<bos>"});
-        forward_vocab.insert({2, "<eoc>"});
-        forward_vocab.insert({3, "<boc>"});
         std::unordered_map<std::string, int> reverse_vocab;
+        reverse_vocab.insert({"<eos>",0});
+        reverse_vocab.insert({"<bos>",1});
+        reverse_vocab.insert({"<eoc>",2});
+        reverse_vocab.insert({"<boc>",3});
         std::unordered_map<std::string, std::pair<int, int>> frequencies;
 
         // find most frequent string of increasing sizes until vocabulary size reached
@@ -214,35 +216,66 @@ extern "C" {
         int n_vocab_found = 0;
         std::priority_queue<std::pair<int, std::string>> frequency_queue;
         std::string string_pair;
+
         // Add single characters
+        std::cout << "[INFO] Adding single characters" << "\n";
         for (int i = 0; i < training_data.size(); i++) {
-            if (frequencies.find(training_data.at(i)) == frequencies.end()) {
-                forward_vocab.insert({forward_vocab.size() - 1, training_data.at(i)});
+            if (reverse_vocab.find(training_data.at(i)) == reverse_vocab.end()) {
+                reverse_vocab.insert({training_data.at(i), reverse_vocab.size() - 1});
+                frequencies.insert({training_data.at(i), std::make_pair(1, i)});
+            } else {
+                frequencies.at(training_data.at(i)).first += 1;
             }
         }
-        while ( n_vocab_found < vocab_size ) {
-            std::cout << "[INFO] Constructing vocabulary, n_vocab_found: " << n_vocab_found << "\n";
-            for (int i = 0; i < training_data.size() - 1; i++) {
-                string_pair = training_data.at(i) + training_data.at( i + 1 );
-                if (frequencies.find(string_pair) == frequencies.end()) {
-                    frequencies.insert({string_pair, std::make_pair(1, i)});
+
+        std::cout << "[INFO] Adding inital pairs" << "\n";
+        // Add initial pairs
+        for (int i = 0; i < training_data.size() - 1; i++) {
+            string_pair = training_data.at(i) + training_data.at( i + 1 );
+            if (frequencies.find(string_pair) == frequencies.end()) {
+                frequencies.insert({string_pair, std::make_pair(1, i)});
+            }
+            else {
+                frequencies.at(string_pair).first += 1;
                 }
-                else {
-                    auto[ it, _ ] = frequencies.try_emplace(string_window, 0);
-                    ++it->second->first;
-                    }
-            }
-            std::pair<std::string, std::pair<int, int>> max_pair = find_max_freq(frequencies);
-            forward_vocab.insert({forward_vocab.size(), max_pair.first});
-            training_data.at(max_pair.second.second) = max_pair.first;
-            training_data.erase(training_data.begin() + max_pair.second.second + 1);
-            frequencies.clear();
         }
-        std::free(&training_string);
+        std::pair<std::string, std::pair<int, int>> max_pair;
+        std::string new_string;
+        int frequency;
+        int data_i;
+        std::vector<std::string> temporary_vector;
+        while ( reverse_vocab.size() < vocab_size ) {
+            std::cout << "[INFO] Constructing vocabulary, n_vocab_found: " << reverse_vocab.size() << "\n";
+            max_pair = find_max_freq(frequencies);
+            new_string = max_pair.first;
+            frequency = max_pair.second.first;
+            data_i = max_pair.second.second;
+
+            // decrement the old pairs
+            frequencies.at(training_data.at(data_i)).first -= 1;
+            frequencies.at(training_data.at(data_i + 1)).first -= 1;
+
+            // Update the training_data and vocabulary with the new pair
+            reverse_vocab.insert({max_pair.first, reverse_vocab.size()});
+            // Merge all instances ofo the pair in the training data, calcualting the
+            // new frequency as we go. this is faster but more memory intensive to use
+            // extra space
+            for (int i = 0; i < training_data.size() - 1; i++) {
+                if (training_data.at(data_i) + training_data.at(data_i + 1) == new_string) {
+                    temporary_vector.push_back(new_string);
+                } else{
+                    temporary_vector.push_back(training_data.at(data_i));
+                    temporary_vector.push_back(training_data.at(data_i + 1));
+                }
+            }
+            training_data = temporary_vector;
+        }
+        training_data.clear();
+        training_data.shrink_to_fit();
         // Construct the reverse_vocab from the forward_vocab
         int counter = 0;
-        for (auto& it: forward_vocab) {
-            reverse_vocab.insert({it.second, counter});
+        for (auto& it: reverse_vocab) {
+            forward_vocab.insert({counter, it.first});
             counter++;
         }
         // Serialize the forward and reverse vocab
