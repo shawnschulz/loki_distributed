@@ -190,6 +190,7 @@ extern "C" {
             }
             else {
                 ret.push_back(50280);
+                j++;
             }
             i = j;
         }
