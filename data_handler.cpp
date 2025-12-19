@@ -185,9 +185,13 @@ extern "C" {
             while ((forward_tokenizer.find(input_string.substr(i, (j - i)  + 1)) != forward_tokenizer.end()) && (j < input_string.size())) {
                 j++;
             }
-            ret.push_back(forward_tokenizer.at(input_string.substr(i, (j - i))));
-            i++;
-            j = i;
+            if (forward_tokenizer.find(input_string.substr(i, (j - i)))!= forward_tokenizer.end()) {
+                ret.push_back(forward_tokenizer.at(input_string.substr(i, (j - i))));
+            }
+            else {
+                ret.push_back(50280);
+            }
+            i = j;
         }
         return ret;
     }
