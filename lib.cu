@@ -18,7 +18,7 @@ __global__ void _multiply(const float *a, float *b) {
 }
 
 // activation
-__global__ void _relu_f16_kernel(float *x, float *y, int N) {
+__global__ void _relu_kernel(float *x, float *y, int N) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     if (x[i] < N) {
         y[i] = fmaxf(0.0f, x[i]);
@@ -42,11 +42,54 @@ __global__ void _kl_divergence(float *a, float *b, float *kl_matrix) {
 __global__ void _sgd(float a[BLOCK_SIZE][BLOCK_SIZE], float b[BLOCK_SIZE][BLOCK_SIZE]) {
 }
 
-__global__ void softmax(float *a, float *b) {}
 
 __global__ void _mulithead_attention(int* tokenized_chars, int vocab_length, float* output_logits) {
+
 }
-__global__ void _convolution_tokens(int* tokenized_chars, int vocab_length, float* output_layer) {
+
+// train an embedding model using self attention to transform tokens into single precision vectors of size 512
+// the model is a shallow 2 layer unsupervised model.
+__global__ void _train_input_embedding_model(int* tokenized_chars, float* output_weights, int vocab_size, int input_size, int dim_size = 512) {
+    // perform self attention
+
+}
+// Encode embeddings as a positional embedding using sinf and cosf positional embedding functions
+// input to model i think has (dim_1, n_positions, model_dimensionality) shape
+__global__ void _positional_encoder(int* tokenized_chars, float* embedded_input, int dim_1, int n_positions, int model_dimensionality) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    if ( i % 2 == 0 ) {
+        sinf()
+    }
+
+}
+
+// Important to note that this converts are initial tokens into a 512 x n_tokens matrix so we can
+// actually do multihead attention
+__global__ void _softmax(float *a, float *b, float *sum, int embedding_size = 512) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    // shouldn't all be i, i is the embedding dims but it gets it depending on token index
+    *sum += exp(a[i % embedding_size]);
+    b[i] = exp(a[i % embedding_size]);
+    _sync_threads();
+    b[i] = b[i] / *sum;
+}
+
+// Take the input tokens and produce an initialized embedding for input to multi-head attention
+// I think we eventulaly need to set a shard_offset argument, so that we can softmax at arbitrary indices of the token size
+extern "C" void launch_transformer_activation(const float*tokens, float*embedding, size_t vector_dim, size_t n_tokens) {
+    float* tokens_gpu;
+    float* embeddings_gpu;
+    float gpu_sum;
+    cudaMalloc(&tokens_gpu, n_tokens);
+    cudaMemcpy(tokens_gpu, tokens, n_tokens, cudaMemcpyHostToDevice);
+    cudaMemcpy(&gpu_sum, 0.0, 1, cudaMemcpyHostToDevice);
+    cudaMalloc(&embeddings_gpu, vector_dim * n_tokens);
+
+    int threadsPerBlock = 256;
+    int blocksPerGrid =
+            (10000 + threadsPerBlock - 1) / threadsPerBlock;
+    _softmax <<< blocksPerGrid, threadsPerBlock >>>(tokens_gpu, embeddings_gpu, &gpu_sum, vector_dim);
+    cudaMemcpy(embedding, embeddings_gpu, size, cudaMemcpyDeviceToHost);
 }
 
 extern "C" void launch_VAE_inference(const float*a, float*b) {
@@ -65,6 +108,14 @@ extern "C" void launch_VAE_inference(const float*a, float*b) {
     cudaMemcpy(b, b_gpu, size, cudaMemcpyDeviceToHost);
     cudaFree(a_gpu);
     cudaFree(b_gpu);
+}
+
+// Take input gene expression matrix and produce initial activation embedding for longevity VAE model
+extern "C" void launch_VAE_activation(const float*X, float*embedding, size_t n_cells, size_t n_genes) {
+    float* X_gpu;
+    float* embedding_gpu;
+    cudaMalloc(&X_gpu, n_cells * n_genes);
+    cudaMemcpy(X_gpu, X, n_cells * n_genes, cudaMemcpyHostToDevice);
 }
 
 extern "C" void launch_multiply(const float*a, float*b) {

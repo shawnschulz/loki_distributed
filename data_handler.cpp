@@ -197,6 +197,15 @@ extern "C" {
         return ret;
     }
 
+    // Loads the initial tokens into an embedding. this will form our actual inputs into a cuda
+    // kernel, though we may need to chunk it before moving it to the device
+    void load_embedding(std::vector<int> tokens, int* embedding, int vocab_size) {
+
+    }
+    void loader_pipeline(char** filename, int* emedding, int vocab_size) {
+
+    }
+
     // Uses the reverse lookup table created by train_tokenizer to detokenize output text
     // this one is easier, just go through the int[] array and put in whatever char is found
     // in the reverse lookup table
@@ -218,5 +227,23 @@ extern "C" {
     // #0,12
     void serialize_shard() {}
     void deserialize_shard() {}
+
+    // Does everything necessary to load tokens into C
+    float* C_data_loader (char** input_filename, char** tokenizer_filename) {
+        std::string string_tokenizer_fn(tokenizer_filename);
+        std::string string_fn(filename);
+        std::vector<std::string> input_string = load_fineweb_vocab_training_data(input_filename);
+        auto forward_tokenizer = deserialize_tokenizer(string_tokenizer_fn);
+        auto reverse_tokenizer = make_reverse_tokenizer(forward_tokenizer);
+        std::vector<int> tokens = encode_tokens(forward_tokenizer, input_string);
+        // malloc the float array of size tokens int vector, transfer all the values over (popping to save memory)
+        // and return
+        float* ret = (float *)malloc(tokens.size() * sizeof(float));
+        for (int i = 0; i < tokens.size(); i++) {
+            ret[i] = tokens.at(i);
+        }
+        return ret;
+    }
+
 
 } // extern "C"

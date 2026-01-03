@@ -20,9 +20,12 @@ void launch_multiply(const float* a, float* b);
 
 int main(int argc, char** argv) {
 
-    // Should loop over files and pause data loading as it is being aggregated when a memroy cap
-    // is reached, then spread the data out until a memory cap is reached per host, then
-    // digest data by running device kernel and serializing a shard
+    // to-dos:
+    // 1. need the token encoding to be loaded in here (and also correctly flattened)
+    // 2. need the token encoding to be finally transformed into an embedding. this can be
+    // partial and split up between ranks or complete
+    // 3. try and debug running it thru a kernel of the right shape. we should check outputs and
+    // use small dimension sizes to start
 
     // Require the data_handler shared object library at this point
     const float* answers = tokenize("data.parquet", &nrows);
@@ -33,14 +36,18 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     printf("cpu initialized rank: %d", rank);
-    float* a = (float *)malloc(10000 * sizeof(float));
-    float* b = (float *)malloc(10000 * sizeof(float));
-    for (int i = 0; i < 10000; i++) {
-        a[i] = 3;
-        b[i] = 5;
-    }
-    launch_multiply(a, b);
+    // For now allocate more than enough for 1 GB of token data
+    // these memory allocations are wonky but we just want to check whether htis
+    // works first
+    // Also for now ignore splitting amongst ranks. eventually want each rank to
+    // independently load a portion of the data nad perform activation only
+    // for their poriton
+    float* tokens = C_data_loader("", "");
+    float* embedding = (float *)malloc(2.5e9 * sizeof(float));
 
+    launch_transformer_activation(tokens, embedding, 512, 2.5e8);
+
+    // For now, check first and last embedding
     float total = 0;
     for (int i = 0; i < 10000; i++) {
         total += b[i];
