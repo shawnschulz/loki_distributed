@@ -27,10 +27,6 @@ int main(int argc, char** argv) {
     // 3. try and debug running it thru a kernel of the right shape. we should check outputs and
     // use small dimension sizes to start
 
-    // Require the data_handler shared object library at this point
-    const float* answers = tokenize("data.parquet", &nrows);
-    const float* problems = tokenize("data.parquet", &nrows);
-
     int rank, size;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -42,17 +38,10 @@ int main(int argc, char** argv) {
     // Also for now ignore splitting amongst ranks. eventually want each rank to
     // independently load a portion of the data nad perform activation only
     // for their poriton
-    float* tokens = C_data_loader("", "");
-    float* embedding = (float *)malloc(2.5e9 * sizeof(float));
+    float* tokens = C_data_loader("/hdd/cloud/datasets/fine_web/data/ultrafineweb_en", "/home/shawn/Downloads/tiny-llama-tokenizer.json");
+    float* embedding = (float *) malloc(2.5e9 * sizeof(float));
 
     launch_transformer_activation(tokens, embedding, 512, 2.5e8);
-
-    // For now, check first and last embedding
-    float total = 0;
-    for (int i = 0; i < 10000; i++) {
-        total += b[i];
-    }
-    printf("total: %f \n", total);
 
     MPI_Finalize();
     return 0;

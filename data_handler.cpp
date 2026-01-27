@@ -229,6 +229,8 @@ extern "C" {
     void deserialize_shard() {}
 
     // Does everything necessary to load tokens into C
+    // eventually should add an index so that different ranks can load
+    // in parallel
     float* C_data_loader (char** input_filename, char** tokenizer_filename) {
         std::string string_tokenizer_fn(tokenizer_filename);
         std::string string_fn(filename);

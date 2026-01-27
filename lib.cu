@@ -58,7 +58,7 @@ __global__ void _train_input_embedding_model(int* tokenized_chars, float* output
 __global__ void _positional_encoder(int* tokenized_chars, float* embedded_input, int dim_1, int n_positions, int model_dimensionality) {
     int i = threadIdx.x + blockIdx.x * blockDim.x;
     if ( i % 2 == 0 ) {
-        sinf()
+        sinf();
     }
 
 }
@@ -73,6 +73,7 @@ __global__ void _softmax(float *a, float *b, float *sum, int embedding_size = 51
     _sync_threads();
     b[i] = b[i] / *sum;
 }
+
 
 // Take the input tokens and produce an initialized embedding for input to multi-head attention
 // I think we eventulaly need to set a shard_offset argument, so that we can softmax at arbitrary indices of the token size
@@ -89,7 +90,23 @@ extern "C" void launch_transformer_activation(const float*tokens, float*embeddin
     int blocksPerGrid =
             (10000 + threadsPerBlock - 1) / threadsPerBlock;
     _softmax <<< blocksPerGrid, threadsPerBlock >>>(tokens_gpu, embeddings_gpu, &gpu_sum, vector_dim);
-    cudaMemcpy(embedding, embeddings_gpu, size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(embedding, embeddings_gpu, vector_dim * n_tokens, cudaMemcpyDeviceToHost);
+}
+
+// Launch the sparse matrix activation using the ReLU kernel targetting our internal embedding dimensions. after this we want to
+// perform the learning steps for VAE using the appropriate loss function kernel.
+extern "C" void launch_longevity_activation(int row, int col, const float*expression, float*embedding, size_t reduced_dim, size_t total_size) {
+    float* expression_gpu;
+    float* embeddings_gpu;
+    cudaMalloc(&expression_gpu, total_size);
+    cudaMemcpy(expression_gpu, expression, total_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(&gpu_sum, 0.0, 1, cudaMemcpyHostToDevice);
+    cudaMalloc(&embeddings_gpu, reduced_dim * total_size);
+    int threadsPerBlock = 256;
+    int blocksPerGrid =
+            (10000 + threadsPerBlock - 1) / threadsPerBlock;
+    _softmax <<< blocksPerGrid, threadsPerBlock >>>(expression_gpu, embeddings_gpu, &gpu_sum, reduced_dim);
+    cudaMemcpy(embedding, embeddings_gpu, reduced_dim * total_size, cudaMemcpyDeviceToHost);
 }
 
 extern "C" void launch_VAE_inference(const float*a, float*b) {
