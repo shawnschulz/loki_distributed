@@ -41,22 +41,65 @@ __global__ void _gaussian_process_mean() {
 __global__ void _gaussian_process_std() {
 }
 
+// Idk why the cublas api i can't seem to find a sqrt kernel, so this 97 year old programmer will just do it the old fashioned way
+__global__ void _sqrt_kernel(float *K) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    // hopefully we don't race condition here copium
+    K[i] = sqrtf(K[i]);
+}
+
+__global__ void _scale_by_length(float *K, float l) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    K[i] = K[i] / 2 * powf(l, 2.0);
+}
+
+// lda = leading dimension of a
+void cublas_rbf_kernel(float* A, float* K, int m, int phi, int lda, cublasHandle_t handle) {
+    // initialize a phi x phi kernel matrix with 0s
+    cudaMemset(K, 0, phi * phi * sizeof(float));
+    const float alpha = 1.0f, beta = 0.0f;
+    const float l = 1.0f;
+    // A_T * A gives sum of squares, put that into K first
+    // note that CUBLAS_OP_T transposes A
+    cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, phi, phi, m, &alpha, A, lda, A, lda, &beta, K, n);
+    // next sqrt everything
+    _sqrt_kernel <<< blocksPerGrid, threadsPerBlock >>>(K);
+    _scale_by_length <<< blocksPerGrid, threadsPerBlock >>>(K, l);
+    thrust::multiplies<thrust::complex<float> > op;
+    // blah blah set up all the sigma mat stuff here
+    float* sigma_mat;
+    thrust::transform(thrust::device, K, K + phi, sigma_mat, z, op);
+}
 
 void launch_gp_model() {
-    // Since GP models have an analytical solution, its actually pretty straightforward with cublas to
-    // program a basic rbf kernel. this is toy data, so we want to make a nice interface for data loading
-    // VAF values from .vcf files and have an input for true FDR and VAF (that can just be uncompressed tsv's)
+    // High level for rbf kernel:
+    // 1. construct a single matrix X with phi rows of input
+    // 2. for all pairwise vector row norms i, j in matrix X, update the K[i, j] value with the norm.
+    //    then add sigma times the phi x phi identity
+    // 3. both the mean and stdev predictions are a simple (but a bit tricky to get syntax right) dot product
+    //    of our training observations y and parts of the kernel K. thus if we calculate the kernel the rest is possible 
+    const int n = 5;
+    const float alpha = 1.0f, beta = -1.0f;
     float X[] = {1.0, 3.0, 5.0, 7.0, 9.0};
     float X_new[] = {5.5};
-    flaot Y[] = {16.0, 4.0, 0.0, 4.0, 16.0};
-    float *y_new, *K, *x_new_gpu, *x_gpu, *y_gpu;
+    float A[] = {1.0, 3.0, 5.0, 7.0, 9.0, 5.5};
+    float Y[] = {16.0, 4.0, 0.0, 4.0, 16.0};
+    float y_new[5];
+    float *K, *x_new_gpu, *x_gpu, *y_gpu;
+    cudaMalloc(x_gpu, 5 * sizeof(float));
+    cudaMalloc(y_gpu, 5 * sizeof(float));
+    cudaMalloc(K_gpu, 5 * sizeof(float));
+    cudaMalloc(y_new_gpu, 5 * sizeof(float));
+    cudaMalloc(x_new_gpu, 1 * sizeof(float));
     cudaMemcpy(x_gpu, X, 5 * sizeof(float), cudaMemcpyHostToDevice); 
     cudaMemcpy(y_gpu, Y, 5 * sizeof(float), cudaMemcpyHostToDevice); 
     cudaMemcpy(x_new_gpu, X_new, 1 * sizeof(float), cudaMemcpyHostToDevice); 
     cublasHandle_t handle;
     cublasCreate(&handle);
     float norm;
-    cublasSnrm2(handle, n, d_result, 1, &norm);
+    // Can use the saxpy vector by vector but could we do it on a big matrix with all of the feature vectors?
+    cublasSaxpy(handle, n, &alpha, x_gpu, 1, 
+    cublasSnrm2(handle, n, K_gpu, 1, &norm);
 }
 
 void main() {
