@@ -35,3 +35,6 @@ compile_test_handler:
 
 build_data_handler:
 	g++ -fPIC -shared data_handler.cpp -larrow -lparquet -o libdata_handler.so
+
+gaussian_process:
+	nvcc -g -o guassian_process_model gp_lib.cu -lcublas
